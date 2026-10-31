@@ -13,11 +13,5 @@ services:
         value: https://pygumynpgrpnvbhajjzj.supabase.co
       - key: SUPABASE_SECRET_KEY
         sync: false
-      - key: PUBLIC_URL
-        sync: false
-      - key: KITCHEN_CHAT_ID
-        sync: false
-      - key: WAITER_CHAT_ID
-        sync: false
-      - key: MANAGER_TELEGRAM_IDS
-        sync: false
+      - key: NODE_VERSION
+        value: 20.18.1
