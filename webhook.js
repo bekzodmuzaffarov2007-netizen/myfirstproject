@@ -130,55 +130,55 @@ async function saveSession(chatId, patch) {
 
 function homeKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('🍲 Menu', 'menu'), Markup.button.callback('🛒 Cart', 'cart')],
-    [Markup.button.callback('🔔 Call waiter', 'waiter')],
-    [Markup.button.callback('🧾 Ask for bill', 'bill')],
+    [Markup.button.callback('🍲 Menyu', 'menu'), Markup.button.callback('🛒 Savat', 'cart')],
+    [Markup.button.callback('🔔 Ofitsiantni chaqirish', 'waiter')],
+    [Markup.button.callback('🧾 Hisobni so‘rash', 'bill')],
   ]);
 }
 
 async function showHome(ctx) {
   const s = await getSession(ctx.chat.id);
-  if (!s) return display(ctx, 'Please scan your table QR code first.');
+  if (!s) return display(ctx, 'Iltimos, avval stolingizdagi QR-kodni skaner qiling.');
   const r = await getRestaurant(s.restaurant_id);
-  return display(ctx, `🍽 ${r?.name || 'Restaurant'}\n📍 ${s.table_name}\n\nWhat would you like to do?`, homeKeyboard());
+  return display(ctx, `🍽 ${r?.name || 'Restoran'}\n📍 ${s.table_name}\n\nNima qilmoqchisiz?`, homeKeyboard());
 }
 
 async function showMenu(ctx) {
   const s = await getSession(ctx.chat.id);
-  if (!s) return display(ctx, 'Please scan your table QR code first.');
+  if (!s) return display(ctx, 'Iltimos, avval stolingizdagi QR-kodni skaner qiling.');
   const items = await getMenu(s.restaurant_id);
   const categories = [...new Set(items.map(x => x.category).filter(Boolean))];
   await saveSession(ctx.chat.id, { ...s, categories });
-  if (!categories.length) return display(ctx, 'The menu is empty.');
+  if (!categories.length) return display(ctx, 'Menyu hozircha bo‘sh.');
   const kb = categories.map((c, i) => [Markup.button.callback(`🍽 ${c}`, `cat:${i}`)]);
-  kb.push([Markup.button.callback('⬅️ Home', 'home')]);
-  return display(ctx, 'Choose a category:', Markup.inlineKeyboard(kb));
+  kb.push([Markup.button.callback('⬅️ Bosh sahifa', 'home')]);
+  return display(ctx, 'Bo‘limni tanlang:', Markup.inlineKeyboard(kb));
 }
 
 async function showCategory(ctx, index) {
   const s = await getSession(ctx.chat.id);
-  if (!s) return display(ctx, 'Please scan your table QR code first.');
+  if (!s) return display(ctx, 'Iltimos, avval stolingizdagi QR-kodni skaner qiling.');
   const category = (Array.isArray(s.categories) ? s.categories : [])[Number(index)];
   if (!category) return showMenu(ctx);
   const items = (await getMenu(s.restaurant_id)).filter(x => x.category === category);
   const kb = items.map(x => [Markup.button.callback(`${x.item_name} — ${money(x.price, x.currency)}`, `item:${x.menu_item_id}`)]);
-  kb.push([Markup.button.callback('⬅️ Categories', 'menu')]);
+  kb.push([Markup.button.callback('⬅️ Bo‘limlar', 'menu')]);
   return display(ctx, `🍽 ${category}`, Markup.inlineKeyboard(kb));
 }
 
 async function showItem(ctx, itemId) {
   const s = await getSession(ctx.chat.id);
-  if (!s) return display(ctx, 'Please scan your table QR code first.');
+  if (!s) return display(ctx, 'Iltimos, avval stolingizdagi QR-kodni skaner qiling.');
   const item = (await getMenu(s.restaurant_id)).find(x => String(x.menu_item_id) === String(itemId));
-  if (!item) return display(ctx, 'This item is not available.');
+  if (!item) return display(ctx, 'Bu taom hozir mavjud emas.');
   const qty = Number((s.cart || {})[itemId] || 0);
   return display(
     ctx,
-    `${item.item_name}${item.description ? `\n${item.description}` : ''}\n\n💰 ${money(item.price, item.currency)}${qty ? `\n\n🛒 In cart: ${qty}` : ''}`,
+    `${item.item_name}${item.description ? `\n${item.description}` : ''}\n\n💰 ${money(item.price, item.currency)}${qty ? `\n\n🛒 Savatda: ${qty}` : ''}`,
     Markup.inlineKeyboard([
       [Markup.button.callback('➖', `itemdec:${item.menu_item_id}`), Markup.button.callback(`🛒 ${qty}`, 'noop'), Markup.button.callback('➕', `add:${item.menu_item_id}`)],
-      [Markup.button.callback('🛒 View cart', 'cart')],
-      [Markup.button.callback('⬅️ Menu', 'menu')],
+      [Markup.button.callback('🛒 Savatni ko‘rish', 'cart')],
+      [Markup.button.callback('⬅️ Menyu', 'menu')],
     ])
   );
 }
@@ -194,19 +194,19 @@ async function changeCart(ctx, itemId, delta) {
 
 async function showCart(ctx) {
   const s = await getSession(ctx.chat.id);
-  if (!s) return display(ctx, 'Please scan your table QR code first.');
+  if (!s) return display(ctx, 'Iltimos, avval stolingizdagi QR-kodni skaner qiling.');
   const cart = s.cart || {};
   const ids = Object.keys(cart).filter(id => Number(cart[id]) > 0);
   if (!ids.length) {
-    return display(ctx, '🛒 Your cart is empty.', Markup.inlineKeyboard([
-      [Markup.button.callback('🍲 Open menu', 'menu')],
-      [Markup.button.callback('⬅️ Home', 'home')],
+    return display(ctx, '🛒 Savatingiz bo‘sh.', Markup.inlineKeyboard([
+      [Markup.button.callback('🍲 Menyuni ochish', 'menu')],
+      [Markup.button.callback('⬅️ Bosh sahifa', 'home')],
     ]));
   }
 
   const menu = await getMenu(s.restaurant_id);
   let total = 0;
-  const lines = ['🛒 Your cart', ''];
+  const lines = ['🛒 Savatingiz', ''];
   const kb = [];
   for (const itemId of ids) {
     const item = menu.find(x => String(x.menu_item_id) === String(itemId));
@@ -221,10 +221,10 @@ async function showCart(ctx) {
       Markup.button.callback('➕', `inc:${itemId}`),
     ]);
   }
-  lines.push('', `Total: ${money(total)}`);
-  kb.push([Markup.button.callback('✅ Place order', 'checkout')]);
-  kb.push([Markup.button.callback('🗑 Clear cart', 'clear')]);
-  kb.push([Markup.button.callback('⬅️ Menu', 'menu')]);
+  lines.push('', `Jami: ${money(total)}`);
+  kb.push([Markup.button.callback('✅ Buyurtma berish', 'checkout')]);
+  kb.push([Markup.button.callback('🗑 Savatni tozalash', 'clear')]);
+  kb.push([Markup.button.callback('⬅️ Menyu', 'menu')]);
   return display(ctx, lines.join('\n'), Markup.inlineKeyboard(kb));
 }
 
@@ -236,7 +236,7 @@ async function targetChat(restaurantId, type) {
 
 async function createServiceRequest(ctx, type) {
   const s = await getSession(ctx.chat.id);
-  if (!s) return display(ctx, 'Please scan your table QR code first.');
+  if (!s) return display(ctx, 'Iltimos, avval stolingizdagi QR-kodni skaner qiling.');
   const requestId = makeId('SRV');
   const { error } = await db.from('restaurant_service_requests').insert({
     request_id: requestId,
@@ -249,10 +249,10 @@ async function createServiceRequest(ctx, type) {
   check(error);
   const target = await targetChat(s.restaurant_id, 'waiter');
   if (target) {
-    try { await bot.telegram.sendMessage(target, `${type === 'BILL' ? '🧾 BILL REQUEST' : '🔔 WAITER REQUEST'}\n📍 ${s.table_name}\n${requestId}`); }
+    try { await bot.telegram.sendMessage(target, `${type === 'BILL' ? '🧾 HISOB SO‘ROVI' : '🔔 OFITSIANT SO‘ROVI'}\n📍 ${s.table_name}\n${requestId}`); }
     catch (err) { console.error('WAITER NOTIFICATION ERROR', err); }
   }
-  return display(ctx, type === 'BILL' ? '🧾 Your bill request was sent.' : '🔔 A waiter has been notified.', homeKeyboard());
+  return display(ctx, type === 'BILL' ? '🧾 Hisob so‘rovingiz yuborildi.' : '🔔 Ofitsiantga xabar berildi.', homeKeyboard());
 }
 
 async function checkout(ctx) {
@@ -260,14 +260,14 @@ async function checkout(ctx) {
   if (checkoutLocks.has(chatKey)) return;
 
   const s = await getSession(ctx.chat.id);
-  if (!s) return safeDisplay(ctx, 'Please scan your table QR code first.');
+  if (!s) return safeDisplay(ctx, 'Iltimos, avval stolingizdagi QR-kodni skaner qiling.');
 
   const cart = { ...(s.cart || {}) };
   const selected = Object.keys(cart).filter(id => Number(cart[id]) > 0);
   if (!selected.length) return;
 
   checkoutLocks.add(chatKey);
-  try { await safeDisplay(ctx, '⏳ Placing your order…\n\nPlease wait a moment.'); } catch (_) {}
+  try { await safeDisplay(ctx, '⏳ Buyurtmangiz saqlanmoqda…\n\nBir oz kuting.'); } catch (_) {}
 
   let orderCommitted = false;
   let orderId = '';
@@ -302,7 +302,7 @@ async function checkout(ctx) {
     }
 
     if (!itemRows.length) {
-      return safeDisplay(ctx, '❌ These items are no longer available.', Markup.inlineKeyboard([[Markup.button.callback('🍲 Back to menu', 'menu')]]));
+      return safeDisplay(ctx, '❌ Tanlangan taomlar hozir mavjud emas.', Markup.inlineKeyboard([[Markup.button.callback('🍲 Menyuga qaytish', 'menu')]]));
     }
 
     let result = await db.from('restaurant_orders').insert({
@@ -339,10 +339,10 @@ async function checkout(ctx) {
     if (!orderCommitted) {
       await safeDisplay(
         ctx,
-        '❌ The order could not be saved. Your cart is still here.\n\nPlease try again.',
+        '❌ Buyurtmani saqlab bo‘lmadi. Savatingiz saqlanib qoldi.\n\nIltimos, yana urinib ko‘ring.',
         Markup.inlineKeyboard([
-          [Markup.button.callback('🛒 Back to cart', 'cart')],
-          [Markup.button.callback('🏠 Home', 'home')],
+          [Markup.button.callback('🛒 Savatga qaytish', 'cart')],
+          [Markup.button.callback('🏠 Bosh sahifa', 'home')],
         ])
       );
       checkoutLocks.delete(chatKey);
@@ -350,13 +350,11 @@ async function checkout(ctx) {
     }
   }
 
-  // From this point forward, the order is already safely stored in Supabase.
-  // Nothing below is allowed to turn a saved order into a customer-facing failure.
   if (orderCommitted) {
     try {
       const target = await targetChat(s.restaurant_id, 'kitchen');
       if (target) {
-        await bot.telegram.sendMessage(target, `🔴 NEW ORDER ${orderId}\n📍 ${s.table_name}\n\n${kitchenLines.join('\n')}\n\n💰 ${money(total)}`);
+        await bot.telegram.sendMessage(target, `🔴 YANGI BUYURTMA ${orderId}\n📍 ${s.table_name}\n\n${kitchenLines.join('\n')}\n\n💰 ${money(total)}`);
       }
     } catch (err) {
       console.error('KITCHEN NOTIFICATION ERROR', err);
@@ -364,10 +362,10 @@ async function checkout(ctx) {
 
     await safeDisplay(
       ctx,
-      `✅ Order saved successfully!\n\n${customerLines.join('\n')}\n\n💰 Total: ${money(total)}\n📍 ${s.table_name}\n\nOrder: ${orderId}`,
+      `✅ Buyurtmangiz saqlandi!\n\n${customerLines.join('\n')}\n\n💰 Jami: ${money(total)}\n📍 ${s.table_name}\n\nBuyurtma: ${orderId}`,
       Markup.inlineKeyboard([
-        [Markup.button.callback('🍲 Order more', 'menu')],
-        [Markup.button.callback('🏠 Home', 'home')],
+        [Markup.button.callback('🍲 Yana buyurtma berish', 'menu')],
+        [Markup.button.callback('🏠 Bosh sahifa', 'home')],
       ])
     );
   }
@@ -396,7 +394,7 @@ async function markPaid(orderId, managerId) {
 bot.start(async ctx => {
   const param = String(ctx.startPayload || '').trim();
   const table = await getTableByParam(param);
-  if (!table) return ctx.reply('Welcome 👋\n\nPlease scan the QR code on your table to start ordering.');
+  if (!table) return ctx.reply('Xush kelibsiz 👋\n\nBuyurtma berishni boshlash uchun stolingizdagi QR-kodni skaner qiling.');
 
   const existing = await getSession(ctx.chat.id);
   const sameTable = existing && String(existing.table_id || '') === String(table.table_id);
@@ -418,10 +416,10 @@ bot.start(async ctx => {
 
 bot.command('menu', showMenu);
 bot.command('paid', async ctx => {
-  if (!(await authorizedManager(ctx.from.id))) return ctx.reply('You are not authorized to confirm payments.');
+  if (!(await authorizedManager(ctx.from.id))) return ctx.reply('Siz to‘lovni tasdiqlash uchun ruxsatga ega emassiz.');
   const orderId = String(ctx.message.text || '').split(/\s+/)[1] || '';
-  if (!orderId) return ctx.reply('Use: /paid ORDER_ID');
-  return ctx.reply((await markPaid(orderId, ctx.from.id)) ? `✅ ${orderId} marked PAID.` : 'Order not found.');
+  if (!orderId) return ctx.reply('Foydalanish: /paid ORDER_ID');
+  return ctx.reply((await markPaid(orderId, ctx.from.id)) ? `✅ ${orderId} TO‘LANGAN deb belgilandi.` : 'Buyurtma topilmadi.');
 });
 
 bot.action('noop', async ctx => { await ctx.answerCbQuery(); });
@@ -430,7 +428,7 @@ bot.action('menu', async ctx => { await ctx.answerCbQuery(); return showMenu(ctx
 bot.action('cart', async ctx => { await ctx.answerCbQuery(); return showCart(ctx); });
 bot.action('waiter', async ctx => { await ctx.answerCbQuery(); return createServiceRequest(ctx, 'WAITER'); });
 bot.action('bill', async ctx => { await ctx.answerCbQuery(); return createServiceRequest(ctx, 'BILL'); });
-bot.action('checkout', async ctx => { await ctx.answerCbQuery('Saving order…'); return checkout(ctx); });
+bot.action('checkout', async ctx => { await ctx.answerCbQuery('Buyurtma saqlanmoqda…'); return checkout(ctx); });
 bot.action('clear', async ctx => {
   await ctx.answerCbQuery();
   const s = await getSession(ctx.chat.id);
@@ -439,7 +437,7 @@ bot.action('clear', async ctx => {
 });
 bot.action(/^cat:(\d+)$/, async ctx => { await ctx.answerCbQuery(); return showCategory(ctx, ctx.match[1]); });
 bot.action(/^item:(.+)$/, async ctx => { await ctx.answerCbQuery(); return showItem(ctx, ctx.match[1]); });
-bot.action(/^add:(.+)$/, async ctx => { await ctx.answerCbQuery('Added ✅'); await changeCart(ctx, ctx.match[1], 1); return showItem(ctx, ctx.match[1]); });
+bot.action(/^add:(.+)$/, async ctx => { await ctx.answerCbQuery('Qo‘shildi ✅'); await changeCart(ctx, ctx.match[1], 1); return showItem(ctx, ctx.match[1]); });
 bot.action(/^itemdec:(.+)$/, async ctx => { await ctx.answerCbQuery(); await changeCart(ctx, ctx.match[1], -1); return showItem(ctx, ctx.match[1]); });
 bot.action(/^inc:(.+)$/, async ctx => { await ctx.answerCbQuery(); await changeCart(ctx, ctx.match[1], 1); return showCart(ctx); });
 bot.action(/^dec:(.+)$/, async ctx => { await ctx.answerCbQuery(); await changeCart(ctx, ctx.match[1], -1); return showCart(ctx); });
