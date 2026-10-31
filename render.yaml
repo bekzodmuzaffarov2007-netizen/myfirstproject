@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: restaurant-telegram-bot
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: GOOGLE_SHEET_ID
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: PUBLIC_URL
+        sync: false
+      - key: KITCHEN_CHAT_ID
+        sync: false
+      - key: WAITER_CHAT_ID
+        sync: false
+      - key: MANAGER_TELEGRAM_IDS
+        sync: false
