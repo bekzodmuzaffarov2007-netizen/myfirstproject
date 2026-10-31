@@ -181,7 +181,7 @@ async function showItem(ctx, itemId) {
   return display(ctx,
     `${item.item_name}${item.description ? `\n${item.description}` : ''}\n\n💰 ${money(item.price, item.currency)}${qty ? `\n\n🛒 Savatda: ${qty}` : ''}`,
     Markup.inlineKeyboard([
-      [Markup.button.callback('➖', `itemdec:${item.menu_item_id}`), Markup.button.callback(`🛒 ${qty}`, 'noop'), Markup.button.callback('➕', `add:${item.menu_item_id}`)],
+      [Markup.button.callback('➖ Ayirish', `itemdec:${item.menu_item_id}`), Markup.button.callback(`🛒 ${qty}`, 'noop'), Markup.button.callback('➕ Qo‘shish', `add:${item.menu_item_id}`)],
       [Markup.button.callback('🛒 Savatni ko‘rish', 'cart')],
       [Markup.button.callback('⬅️ Menyu', 'menu')],
     ])
@@ -221,9 +221,9 @@ async function showCart(ctx) {
     total += line;
     lines.push(`${qty} × ${item.item_name} — ${money(line, item.currency)}`);
     kb.push([
-      Markup.button.callback('➖', `dec:${itemId}`),
+      Markup.button.callback('➖ Ayirish', `dec:${itemId}`),
       Markup.button.callback(`${item.item_name} × ${qty}`, 'noop'),
-      Markup.button.callback('➕', `inc:${itemId}`),
+      Markup.button.callback('➕ Qo‘shish', `inc:${itemId}`),
     ]);
   }
   lines.push('', `Jami: ${money(total)}`);
@@ -326,8 +326,8 @@ async function checkout(ctx) {
       if (target) await bot.telegram.sendMessage(target, `🔴 YANGI BUYURTMA ${orderId}\n📍 ${s.table_name}\n\n${kitchenLines.join('\n')}\n\n💰 ${money(total)}`);
     } catch (err) { console.error('KITCHEN NOTIFICATION ERROR', err); }
 
-    await safeDisplay(ctx, `✅ Buyurtma muvaffaqiyatli saqlandi!\n\n${customerLines.join('\n')}\n\n💰 Jami: ${money(total)}\n📍 ${s.table_name}\n\nBuyurtma: ${orderId}`,
-      Markup.inlineKeyboard([[Markup.button.callback('🍲 Yana buyurtma', 'menu')], [Markup.button.callback('🏠 Bosh sahifa', 'home')]]));
+    await safeDisplay(ctx, `✅ Buyurtma muvaffaqiyatli qabul qilindi!\n\n${customerLines.join('\n')}\n\n💰 Jami: ${money(total)}\n📍 ${s.table_name}\n\nBuyurtma raqami: ${orderId}`,
+      Markup.inlineKeyboard([[Markup.button.callback('🍲 Yana buyurtma berish', 'menu')], [Markup.button.callback('🏠 Bosh sahifa', 'home')]]));
   }
   checkoutLocks.delete(chatKey);
 }
@@ -446,9 +446,9 @@ bot.action('clear', async ctx => { await ctx.answerCbQuery(); const s = await ge
 bot.action(/^cat:(\d+)$/, async ctx => { await ctx.answerCbQuery(); return showCategory(ctx, ctx.match[1]); });
 bot.action(/^item:(.+)$/, async ctx => { await ctx.answerCbQuery(); return showItem(ctx, ctx.match[1]); });
 bot.action(/^add:(.+)$/, async ctx => { await ctx.answerCbQuery('Qo‘shildi ✅'); await changeCart(ctx, ctx.match[1], 1); return showItem(ctx, ctx.match[1]); });
-bot.action(/^itemdec:(.+)$/, async ctx => { await ctx.answerCbQuery(); await changeCart(ctx, ctx.match[1], -1); return showItem(ctx, ctx.match[1]); });
-bot.action(/^inc:(.+)$/, async ctx => { await ctx.answerCbQuery(); await changeCart(ctx, ctx.match[1], 1); return showCart(ctx); });
-bot.action(/^dec:(.+)$/, async ctx => { await ctx.answerCbQuery(); await changeCart(ctx, ctx.match[1], -1); return showCart(ctx); });
+bot.action(/^itemdec:(.+)$/, async ctx => { await ctx.answerCbQuery('Ayirildi'); await changeCart(ctx, ctx.match[1], -1); return showItem(ctx, ctx.match[1]); });
+bot.action(/^inc:(.+)$/, async ctx => { await ctx.answerCbQuery('Qo‘shildi ✅'); await changeCart(ctx, ctx.match[1], 1); return showCart(ctx); });
+bot.action(/^dec:(.+)$/, async ctx => { await ctx.answerCbQuery('Ayirildi'); await changeCart(ctx, ctx.match[1], -1); return showCart(ctx); });
 
 bot.action('staff:refresh', async ctx => { await ctx.answerCbQuery(); return showWaiterPanel(ctx); });
 bot.action(/^staff:resolve:(.+)$/, async ctx => {
