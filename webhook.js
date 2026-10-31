@@ -36,17 +36,54 @@ const money = (n, c = 'UZS') => `${Number(n || 0).toLocaleString('en-US')} ${c}`
 
 function check(error) { if (error) throw error; }
 
+async function removeUiMessage(chatId, messageId) {
+  if (!chatId || !messageId) return;
+  try {
+    await bot.telegram.deleteMessage(chatId, Number(messageId));
+    return;
+  } catch (_) {}
+
+  try {
+    await bot.telegram.editMessageReplyMarkup(chatId, Number(messageId), undefined, { inline_keyboard: [] });
+  } catch (_) {}
+}
+
 async function display(ctx, text, markup) {
-  if (ctx.callbackQuery?.message) {
+  const chatId = String(ctx.chat.id);
+  let session = null;
+  try { session = await getSession(chatId); } catch (_) {}
+
+  const callbackMessageId = ctx.callbackQuery?.message?.message_id
+    ? String(ctx.callbackQuery.message.message_id)
+    : '';
+
+  if (callbackMessageId) {
+    if (session?.ui_message_id && String(session.ui_message_id) !== callbackMessageId) {
+      await removeUiMessage(chatId, session.ui_message_id);
+    }
+
     try {
-      return await ctx.editMessageText(text, markup);
+      const edited = await ctx.editMessageText(text, markup);
+      if (session) await saveSession(chatId, { ...session, ui_message_id: callbackMessageId });
+      return edited;
     } catch (err) {
       const msg = String(err?.description || err?.message || '');
-      if (msg.includes('message is not modified')) return;
+      if (msg.includes('message is not modified')) {
+        if (session) await saveSession(chatId, { ...session, ui_message_id: callbackMessageId });
+        return;
+      }
       if (!msg.includes("message can't be edited") && !msg.includes('message to edit not found')) throw err;
+      await removeUiMessage(chatId, callbackMessageId);
     }
+  } else if (session?.ui_message_id) {
+    await removeUiMessage(chatId, session.ui_message_id);
   }
-  return ctx.reply(text, markup);
+
+  const sent = await ctx.reply(text, markup);
+  if (session) {
+    await saveSession(chatId, { ...session, ui_message_id: String(sent.message_id) });
+  }
+  return sent;
 }
 
 async function markUpdate(updateId) {
@@ -205,8 +242,6 @@ async function createServiceRequest(ctx, type) {
 
 async function checkout(ctx) {
   const chatKey = String(ctx.chat.id);
-
-  // A second tap must never start another checkout or overwrite the receipt.
   if (checkoutLocks.has(chatKey)) return;
 
   const s = await getSession(ctx.chat.id);
@@ -217,8 +252,6 @@ async function checkout(ctx) {
   if (!selected.length) return;
 
   checkoutLocks.add(chatKey);
-
-  // Remove the checkout button immediately, before any slow database/network work.
   await display(ctx, '⏳ Placing your order…\n\nPlease wait a moment.');
 
   try {
@@ -270,7 +303,6 @@ async function checkout(ctx) {
     result = await db.from('restaurant_order_items').insert(itemRows);
     check(result.error);
 
-    // Only clear the exact cart that was successfully ordered.
     const latest = await getSession(ctx.chat.id);
     await saveSession(ctx.chat.id, {
       ...(latest || s),
@@ -328,13 +360,21 @@ bot.start(async ctx => {
   const param = String(ctx.startPayload || '').trim();
   const table = await getTableByParam(param);
   if (!table) return ctx.reply('Welcome 👋\n\nPlease scan the QR code on your table to start ordering.');
+
+  const existing = await getSession(ctx.chat.id);
+  const sameTable = existing && String(existing.table_id || '') === String(table.table_id);
+
   await saveSession(ctx.chat.id, {
+    ...(existing || {}),
     restaurant_id: table.restaurant_id,
     table_id: table.table_id,
     table_name: table.table_name,
     customer_telegram_id: String(ctx.from.id),
     customer_name: [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' ') || ctx.from.username || String(ctx.from.id),
-    cart: {}, categories: [],
+    cart: sameTable ? (existing.cart || {}) : {},
+    categories: sameTable ? (existing.categories || []) : [],
+    last_order_id: existing?.last_order_id || null,
+    ui_message_id: existing?.ui_message_id || null,
   });
   return showHome(ctx);
 });
