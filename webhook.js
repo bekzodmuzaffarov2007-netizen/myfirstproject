@@ -42,7 +42,6 @@ async function removeUiMessage(chatId, messageId) {
     await bot.telegram.deleteMessage(chatId, Number(messageId));
     return;
   } catch (_) {}
-
   try {
     await bot.telegram.editMessageReplyMarkup(chatId, Number(messageId), undefined, { inline_keyboard: [] });
   } catch (_) {}
@@ -64,12 +63,16 @@ async function display(ctx, text, markup) {
 
     try {
       const edited = await ctx.editMessageText(text, markup);
-      if (session) await saveSession(chatId, { ...session, ui_message_id: callbackMessageId });
+      if (session) {
+        try { await saveSession(chatId, { ...session, ui_message_id: callbackMessageId }); } catch (err) { console.error('UI SESSION SAVE ERROR', err); }
+      }
       return edited;
     } catch (err) {
       const msg = String(err?.description || err?.message || '');
       if (msg.includes('message is not modified')) {
-        if (session) await saveSession(chatId, { ...session, ui_message_id: callbackMessageId });
+        if (session) {
+          try { await saveSession(chatId, { ...session, ui_message_id: callbackMessageId }); } catch (saveErr) { console.error('UI SESSION SAVE ERROR', saveErr); }
+        }
         return;
       }
       if (!msg.includes("message can't be edited") && !msg.includes('message to edit not found')) throw err;
@@ -81,9 +84,18 @@ async function display(ctx, text, markup) {
 
   const sent = await ctx.reply(text, markup);
   if (session) {
-    await saveSession(chatId, { ...session, ui_message_id: String(sent.message_id) });
+    try { await saveSession(chatId, { ...session, ui_message_id: String(sent.message_id) }); } catch (err) { console.error('UI SESSION SAVE ERROR', err); }
   }
   return sent;
+}
+
+async function safeDisplay(ctx, text, markup) {
+  try {
+    return await display(ctx, text, markup);
+  } catch (err) {
+    console.error('DISPLAY ERROR', err);
+    try { return await ctx.reply(text, markup); } catch (replyErr) { console.error('FALLBACK REPLY ERROR', replyErr); }
+  }
 }
 
 async function markUpdate(updateId) {
@@ -236,7 +248,10 @@ async function createServiceRequest(ctx, type) {
   });
   check(error);
   const target = await targetChat(s.restaurant_id, 'waiter');
-  if (target) await bot.telegram.sendMessage(target, `${type === 'BILL' ? '🧾 BILL REQUEST' : '🔔 WAITER REQUEST'}\n📍 ${s.table_name}\n${requestId}`);
+  if (target) {
+    try { await bot.telegram.sendMessage(target, `${type === 'BILL' ? '🧾 BILL REQUEST' : '🔔 WAITER REQUEST'}\n📍 ${s.table_name}\n${requestId}`); }
+    catch (err) { console.error('WAITER NOTIFICATION ERROR', err); }
+  }
   return display(ctx, type === 'BILL' ? '🧾 Your bill request was sent.' : '🔔 A waiter has been notified.', homeKeyboard());
 }
 
@@ -245,22 +260,25 @@ async function checkout(ctx) {
   if (checkoutLocks.has(chatKey)) return;
 
   const s = await getSession(ctx.chat.id);
-  if (!s) return display(ctx, 'Please scan your table QR code first.');
+  if (!s) return safeDisplay(ctx, 'Please scan your table QR code first.');
 
   const cart = { ...(s.cart || {}) };
   const selected = Object.keys(cart).filter(id => Number(cart[id]) > 0);
   if (!selected.length) return;
 
   checkoutLocks.add(chatKey);
-  await display(ctx, '⏳ Placing your order…\n\nPlease wait a moment.');
+  try { await safeDisplay(ctx, '⏳ Placing your order…\n\nPlease wait a moment.'); } catch (_) {}
+
+  let orderCommitted = false;
+  let orderId = '';
+  let total = 0;
+  let customerLines = [];
+  let kitchenLines = [];
 
   try {
     const menu = await getMenu(s.restaurant_id);
-    const orderId = makeId('ORD');
-    let total = 0;
+    orderId = makeId('ORD');
     const itemRows = [];
-    const kitchenLines = [];
-    const customerLines = [];
 
     for (const itemId of selected) {
       const item = menu.find(x => String(x.menu_item_id) === String(itemId));
@@ -284,7 +302,7 @@ async function checkout(ctx) {
     }
 
     if (!itemRows.length) {
-      return display(ctx, '❌ These items are no longer available.', Markup.inlineKeyboard([[Markup.button.callback('🍲 Back to menu', 'menu')]]));
+      return safeDisplay(ctx, '❌ These items are no longer available.', Markup.inlineKeyboard([[Markup.button.callback('🍲 Back to menu', 'menu')]]));
     }
 
     let result = await db.from('restaurant_orders').insert({
@@ -303,39 +321,58 @@ async function checkout(ctx) {
     result = await db.from('restaurant_order_items').insert(itemRows);
     check(result.error);
 
-    const latest = await getSession(ctx.chat.id);
-    await saveSession(ctx.chat.id, {
-      ...(latest || s),
-      cart: {},
-      last_order_id: orderId,
-    });
+    orderCommitted = true;
 
-    const target = await targetChat(s.restaurant_id, 'kitchen');
-    if (target) {
-      await bot.telegram.sendMessage(target, `🔴 NEW ORDER ${orderId}\n📍 ${s.table_name}\n\n${kitchenLines.join('\n')}\n\n💰 ${money(total)}`);
+    try {
+      const latest = await getSession(ctx.chat.id);
+      await saveSession(ctx.chat.id, {
+        ...(latest || s),
+        cart: {},
+        last_order_id: orderId,
+      });
+    } catch (err) {
+      console.error('POST-COMMIT SESSION ERROR', err);
     }
 
-    return display(
+  } catch (err) {
+    console.error('CHECKOUT DATABASE ERROR', err);
+    if (!orderCommitted) {
+      await safeDisplay(
+        ctx,
+        '❌ The order could not be saved. Your cart is still here.\n\nPlease try again.',
+        Markup.inlineKeyboard([
+          [Markup.button.callback('🛒 Back to cart', 'cart')],
+          [Markup.button.callback('🏠 Home', 'home')],
+        ])
+      );
+      checkoutLocks.delete(chatKey);
+      return;
+    }
+  }
+
+  // From this point forward, the order is already safely stored in Supabase.
+  // Nothing below is allowed to turn a saved order into a customer-facing failure.
+  if (orderCommitted) {
+    try {
+      const target = await targetChat(s.restaurant_id, 'kitchen');
+      if (target) {
+        await bot.telegram.sendMessage(target, `🔴 NEW ORDER ${orderId}\n📍 ${s.table_name}\n\n${kitchenLines.join('\n')}\n\n💰 ${money(total)}`);
+      }
+    } catch (err) {
+      console.error('KITCHEN NOTIFICATION ERROR', err);
+    }
+
+    await safeDisplay(
       ctx,
-      `✅ Order placed successfully!\n\n${customerLines.join('\n')}\n\n💰 Total: ${money(total)}\n📍 ${s.table_name}\n\nOrder: ${orderId}`,
+      `✅ Order saved successfully!\n\n${customerLines.join('\n')}\n\n💰 Total: ${money(total)}\n📍 ${s.table_name}\n\nOrder: ${orderId}`,
       Markup.inlineKeyboard([
         [Markup.button.callback('🍲 Order more', 'menu')],
         [Markup.button.callback('🏠 Home', 'home')],
       ])
     );
-  } catch (err) {
-    console.error('CHECKOUT ERROR', err);
-    return display(
-      ctx,
-      '❌ The order was not completed. Your cart is still saved.\n\nPlease try again.',
-      Markup.inlineKeyboard([
-        [Markup.button.callback('🛒 Back to cart', 'cart')],
-        [Markup.button.callback('🏠 Home', 'home')],
-      ])
-    );
-  } finally {
-    checkoutLocks.delete(chatKey);
   }
+
+  checkoutLocks.delete(chatKey);
 }
 
 async function authorizedManager(userId) {
@@ -393,7 +430,7 @@ bot.action('menu', async ctx => { await ctx.answerCbQuery(); return showMenu(ctx
 bot.action('cart', async ctx => { await ctx.answerCbQuery(); return showCart(ctx); });
 bot.action('waiter', async ctx => { await ctx.answerCbQuery(); return createServiceRequest(ctx, 'WAITER'); });
 bot.action('bill', async ctx => { await ctx.answerCbQuery(); return createServiceRequest(ctx, 'BILL'); });
-bot.action('checkout', async ctx => { await ctx.answerCbQuery('Placing order…'); return checkout(ctx); });
+bot.action('checkout', async ctx => { await ctx.answerCbQuery('Saving order…'); return checkout(ctx); });
 bot.action('clear', async ctx => {
   await ctx.answerCbQuery();
   const s = await getSession(ctx.chat.id);
