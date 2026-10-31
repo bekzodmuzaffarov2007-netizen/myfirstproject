@@ -29,13 +29,12 @@ const app = express();
 app.use(express.json());
 
 const managerIds = new Set(MANAGER_TELEGRAM_IDS.split(',').map(x => x.trim()).filter(Boolean));
+const checkoutLocks = new Set();
 const now = () => new Date().toISOString();
-const makeId = prefix => `${prefix}-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+const makeId = p => `${p}-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
 const money = (n, c = 'UZS') => `${Number(n || 0).toLocaleString('en-US')} ${c}`;
 
-function check(error) {
-  if (error) throw error;
-}
+function check(error) { if (error) throw error; }
 
 async function display(ctx, text, markup) {
   if (ctx.callbackQuery?.message) {
@@ -44,7 +43,7 @@ async function display(ctx, text, markup) {
     } catch (err) {
       const msg = String(err?.description || err?.message || '');
       if (msg.includes('message is not modified')) return;
-      if (!msg.includes('message can\'t be edited') && !msg.includes('message to edit not found')) throw err;
+      if (!msg.includes("message can't be edited") && !msg.includes('message to edit not found')) throw err;
     }
   }
   return ctx.reply(text, markup);
@@ -60,33 +59,24 @@ async function markUpdate(updateId) {
 
 async function getTableByParam(param) {
   const { data, error } = await db.from('restaurant_tables').select('*').eq('qr_start_param', param).eq('active', true).maybeSingle();
-  check(error);
-  return data;
+  check(error); return data;
 }
-
 async function getRestaurant(id) {
   const { data, error } = await db.from('restaurant_restaurants').select('*').eq('restaurant_id', id).eq('active', true).maybeSingle();
-  check(error);
-  return data;
+  check(error); return data;
 }
-
 async function getMenu(restaurantId) {
   const { data, error } = await db.from('restaurant_menu').select('*').eq('restaurant_id', restaurantId).eq('available', true).order('sort_order', { ascending: true });
-  check(error);
-  return data || [];
+  check(error); return data || [];
 }
-
 async function getSession(chatId) {
   const { data, error } = await db.from('restaurant_bot_sessions').select('*').eq('chat_id', String(chatId)).maybeSingle();
-  check(error);
-  return data;
+  check(error); return data;
 }
-
 async function saveSession(chatId, patch) {
   const payload = { chat_id: String(chatId), ...patch, updated_at: now() };
   const { data, error } = await db.from('restaurant_bot_sessions').upsert(payload, { onConflict: 'chat_id' }).select().single();
-  check(error);
-  return data;
+  check(error); return data;
 }
 
 function homeKeyboard() {
@@ -119,8 +109,7 @@ async function showMenu(ctx) {
 async function showCategory(ctx, index) {
   const s = await getSession(ctx.chat.id);
   if (!s) return display(ctx, 'Please scan your table QR code first.');
-  const categories = Array.isArray(s.categories) ? s.categories : [];
-  const category = categories[Number(index)];
+  const category = (Array.isArray(s.categories) ? s.categories : [])[Number(index)];
   if (!category) return showMenu(ctx);
   const items = (await getMenu(s.restaurant_id)).filter(x => x.category === category);
   const kb = items.map(x => [Markup.button.callback(`${x.item_name} — ${money(x.price, x.currency)}`, `item:${x.menu_item_id}`)]);
@@ -134,10 +123,9 @@ async function showItem(ctx, itemId) {
   const item = (await getMenu(s.restaurant_id)).find(x => String(x.menu_item_id) === String(itemId));
   if (!item) return display(ctx, 'This item is not available.');
   const qty = Number((s.cart || {})[itemId] || 0);
-  const qtyLine = qty > 0 ? `\n\n🛒 In cart: ${qty}` : '';
   return display(
     ctx,
-    `${item.item_name}${item.description ? `\n${item.description}` : ''}\n\n💰 ${money(item.price, item.currency)}${qtyLine}`,
+    `${item.item_name}${item.description ? `\n${item.description}` : ''}\n\n💰 ${money(item.price, item.currency)}${qty ? `\n\n🛒 In cart: ${qty}` : ''}`,
     Markup.inlineKeyboard([
       [Markup.button.callback('➖', `itemdec:${item.menu_item_id}`), Markup.button.callback(`🛒 ${qty}`, 'noop'), Markup.button.callback('➕', `add:${item.menu_item_id}`)],
       [Markup.button.callback('🛒 View cart', 'cart')],
@@ -151,8 +139,7 @@ async function changeCart(ctx, itemId, delta) {
   if (!s) return null;
   const cart = { ...(s.cart || {}) };
   const next = Math.max(0, Number(cart[itemId] || 0) + delta);
-  if (next) cart[itemId] = next;
-  else delete cart[itemId];
+  if (next) cart[itemId] = next; else delete cart[itemId];
   return saveSession(ctx.chat.id, { ...s, cart });
 }
 
@@ -161,7 +148,6 @@ async function showCart(ctx) {
   if (!s) return display(ctx, 'Please scan your table QR code first.');
   const cart = s.cart || {};
   const ids = Object.keys(cart).filter(id => Number(cart[id]) > 0);
-
   if (!ids.length) {
     return display(ctx, '🛒 Your cart is empty.', Markup.inlineKeyboard([
       [Markup.button.callback('🍲 Open menu', 'menu')],
@@ -173,7 +159,6 @@ async function showCart(ctx) {
   let total = 0;
   const lines = ['🛒 Your cart', ''];
   const kb = [];
-
   for (const itemId of ids) {
     const item = menu.find(x => String(x.menu_item_id) === String(itemId));
     if (!item) continue;
@@ -187,7 +172,6 @@ async function showCart(ctx) {
       Markup.button.callback('➕', `inc:${itemId}`),
     ]);
   }
-
   lines.push('', `Total: ${money(total)}`);
   kb.push([Markup.button.callback('✅ Place order', 'checkout')]);
   kb.push([Markup.button.callback('🗑 Clear cart', 'clear')]);
@@ -203,7 +187,7 @@ async function targetChat(restaurantId, type) {
 
 async function createServiceRequest(ctx, type) {
   const s = await getSession(ctx.chat.id);
-  if (!s) return ctx.reply('Please scan your table QR code first.');
+  if (!s) return display(ctx, 'Please scan your table QR code first.');
   const requestId = makeId('SRV');
   const { error } = await db.from('restaurant_service_requests').insert({
     request_id: requestId,
@@ -216,106 +200,128 @@ async function createServiceRequest(ctx, type) {
   check(error);
   const target = await targetChat(s.restaurant_id, 'waiter');
   if (target) await bot.telegram.sendMessage(target, `${type === 'BILL' ? '🧾 BILL REQUEST' : '🔔 WAITER REQUEST'}\n📍 ${s.table_name}\n${requestId}`);
-  return ctx.reply(type === 'BILL' ? '🧾 Your bill request was sent.' : '🔔 A waiter has been notified.');
+  return display(ctx, type === 'BILL' ? '🧾 Your bill request was sent.' : '🔔 A waiter has been notified.', homeKeyboard());
 }
 
 async function checkout(ctx) {
+  const chatKey = String(ctx.chat.id);
+
+  // A second tap must never start another checkout or overwrite the receipt.
+  if (checkoutLocks.has(chatKey)) return;
+
   const s = await getSession(ctx.chat.id);
   if (!s) return display(ctx, 'Please scan your table QR code first.');
-  const cart = s.cart || {};
+
+  const cart = { ...(s.cart || {}) };
   const selected = Object.keys(cart).filter(id => Number(cart[id]) > 0);
-  if (!selected.length) return showCart(ctx);
+  if (!selected.length) return;
 
-  const menu = await getMenu(s.restaurant_id);
-  const orderId = makeId('ORD');
-  let total = 0;
-  const itemRows = [];
-  const kitchenLines = [];
-  const customerLines = [];
+  checkoutLocks.add(chatKey);
 
-  for (const itemId of selected) {
-    const item = menu.find(x => String(x.menu_item_id) === String(itemId));
-    if (!item) continue;
-    const quantity = Number(cart[itemId]);
-    const lineTotal = quantity * Number(item.price);
-    total += lineTotal;
-    itemRows.push({
-      order_item_id: makeId('ITM'),
+  // Remove the checkout button immediately, before any slow database/network work.
+  await display(ctx, '⏳ Placing your order…\n\nPlease wait a moment.');
+
+  try {
+    const menu = await getMenu(s.restaurant_id);
+    const orderId = makeId('ORD');
+    let total = 0;
+    const itemRows = [];
+    const kitchenLines = [];
+    const customerLines = [];
+
+    for (const itemId of selected) {
+      const item = menu.find(x => String(x.menu_item_id) === String(itemId));
+      if (!item) continue;
+      const quantity = Number(cart[itemId]);
+      const lineTotal = quantity * Number(item.price);
+      total += lineTotal;
+      itemRows.push({
+        order_item_id: makeId('ITM'),
+        order_id: orderId,
+        restaurant_id: s.restaurant_id,
+        menu_item_id: item.menu_item_id,
+        item_name: item.item_name,
+        quantity,
+        unit_price: item.price,
+        line_total: lineTotal,
+        status: 'NEW',
+      });
+      kitchenLines.push(`${quantity} × ${item.item_name}`);
+      customerLines.push(`${quantity} × ${item.item_name} — ${money(lineTotal, item.currency)}`);
+    }
+
+    if (!itemRows.length) {
+      return display(ctx, '❌ These items are no longer available.', Markup.inlineKeyboard([[Markup.button.callback('🍲 Back to menu', 'menu')]]));
+    }
+
+    let result = await db.from('restaurant_orders').insert({
       order_id: orderId,
       restaurant_id: s.restaurant_id,
-      menu_item_id: item.menu_item_id,
-      item_name: item.item_name,
-      quantity,
-      unit_price: item.price,
-      line_total: lineTotal,
+      table_id: s.table_id,
+      customer_telegram_id: String(ctx.from.id),
+      customer_name: [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' ') || ctx.from.username || String(ctx.from.id),
       status: 'NEW',
+      subtotal: total,
+      total,
+      payment_status: 'UNPAID',
     });
-    kitchenLines.push(`${quantity} × ${item.item_name}`);
-    customerLines.push(`${quantity} × ${item.item_name}`);
+    check(result.error);
+
+    result = await db.from('restaurant_order_items').insert(itemRows);
+    check(result.error);
+
+    // Only clear the exact cart that was successfully ordered.
+    const latest = await getSession(ctx.chat.id);
+    await saveSession(ctx.chat.id, {
+      ...(latest || s),
+      cart: {},
+      last_order_id: orderId,
+    });
+
+    const target = await targetChat(s.restaurant_id, 'kitchen');
+    if (target) {
+      await bot.telegram.sendMessage(target, `🔴 NEW ORDER ${orderId}\n📍 ${s.table_name}\n\n${kitchenLines.join('\n')}\n\n💰 ${money(total)}`);
+    }
+
+    return display(
+      ctx,
+      `✅ Order placed successfully!\n\n${customerLines.join('\n')}\n\n💰 Total: ${money(total)}\n📍 ${s.table_name}\n\nOrder: ${orderId}`,
+      Markup.inlineKeyboard([
+        [Markup.button.callback('🍲 Order more', 'menu')],
+        [Markup.button.callback('🏠 Home', 'home')],
+      ])
+    );
+  } catch (err) {
+    console.error('CHECKOUT ERROR', err);
+    return display(
+      ctx,
+      '❌ The order was not completed. Your cart is still saved.\n\nPlease try again.',
+      Markup.inlineKeyboard([
+        [Markup.button.callback('🛒 Back to cart', 'cart')],
+        [Markup.button.callback('🏠 Home', 'home')],
+      ])
+    );
+  } finally {
+    checkoutLocks.delete(chatKey);
   }
-
-  if (!itemRows.length) return display(ctx, 'The selected items are no longer available.');
-
-  let result = await db.from('restaurant_orders').insert({
-    order_id: orderId,
-    restaurant_id: s.restaurant_id,
-    table_id: s.table_id,
-    customer_telegram_id: String(ctx.from.id),
-    customer_name: [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' ') || ctx.from.username || String(ctx.from.id),
-    status: 'NEW',
-    subtotal: total,
-    total,
-    payment_status: 'UNPAID',
-  });
-  check(result.error);
-
-  result = await db.from('restaurant_order_items').insert(itemRows);
-  check(result.error);
-
-  await saveSession(ctx.chat.id, { ...s, cart: {}, last_order_id: orderId });
-
-  const target = await targetChat(s.restaurant_id, 'kitchen');
-  if (target) {
-    await bot.telegram.sendMessage(target, `🔴 NEW ORDER ${orderId}\n📍 ${s.table_name}\n\n${kitchenLines.join('\n')}\n\n💰 ${money(total)}`);
-  }
-
-  return display(
-    ctx,
-    `✅ Order placed successfully!\n\n${customerLines.join('\n')}\n\n💰 Total: ${money(total)}\n📍 ${s.table_name}\n\nOrder: ${orderId}`,
-    Markup.inlineKeyboard([
-      [Markup.button.callback('🍲 Order more', 'menu')],
-      [Markup.button.callback('🏠 Home', 'home')],
-    ])
-  );
 }
 
 async function authorizedManager(userId) {
   if (managerIds.has(String(userId))) return true;
   const { data, error } = await db.from('restaurant_staff').select('staff_id').eq('telegram_user_id', String(userId)).eq('active', true).in('role', ['OWNER', 'MANAGER', 'CASHIER']).limit(1);
-  check(error);
-  return Boolean(data?.length);
+  check(error); return Boolean(data?.length);
 }
 
 async function markPaid(orderId, managerId) {
   const { data: order, error } = await db.from('restaurant_orders').select('*').eq('order_id', orderId).maybeSingle();
-  check(error);
-  if (!order) return false;
-
+  check(error); if (!order) return false;
   let result = await db.from('restaurant_orders').update({ status: 'CLOSED', payment_status: 'PAID', closed_at: now() }).eq('order_id', orderId);
   check(result.error);
-
   result = await db.from('restaurant_payments').insert({
-    payment_id: makeId('PAY'),
-    restaurant_id: order.restaurant_id,
-    order_id: order.order_id,
-    table_id: order.table_id,
-    amount: order.total,
-    method: 'CASH',
-    status: 'CONFIRMED',
-    confirmed_by: String(managerId),
+    payment_id: makeId('PAY'), restaurant_id: order.restaurant_id, order_id: order.order_id,
+    table_id: order.table_id, amount: order.total, method: 'CASH', status: 'CONFIRMED', confirmed_by: String(managerId),
   });
-  check(result.error);
-  return true;
+  check(result.error); return true;
 }
 
 bot.start(async ctx => {
@@ -328,8 +334,7 @@ bot.start(async ctx => {
     table_name: table.table_name,
     customer_telegram_id: String(ctx.from.id),
     customer_name: [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' ') || ctx.from.username || String(ctx.from.id),
-    cart: {},
-    categories: [],
+    cart: {}, categories: [],
   });
   return showHome(ctx);
 });
@@ -348,7 +353,7 @@ bot.action('menu', async ctx => { await ctx.answerCbQuery(); return showMenu(ctx
 bot.action('cart', async ctx => { await ctx.answerCbQuery(); return showCart(ctx); });
 bot.action('waiter', async ctx => { await ctx.answerCbQuery(); return createServiceRequest(ctx, 'WAITER'); });
 bot.action('bill', async ctx => { await ctx.answerCbQuery(); return createServiceRequest(ctx, 'BILL'); });
-bot.action('checkout', async ctx => { await ctx.answerCbQuery(); return checkout(ctx); });
+bot.action('checkout', async ctx => { await ctx.answerCbQuery('Placing order…'); return checkout(ctx); });
 bot.action('clear', async ctx => {
   await ctx.answerCbQuery();
   const s = await getSession(ctx.chat.id);
