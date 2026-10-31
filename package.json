@@ -1,14 +1,14 @@
 {
   "name": "restaurant-telegram-bot",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
   "description": "Telegram restaurant ordering bot backed by Supabase",
-  "main": "webhook.js",
+  "main": "start.js",
   "scripts": {
-    "start": "node webhook.js"
+    "start": "node start.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": "20.x"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.57.4",
