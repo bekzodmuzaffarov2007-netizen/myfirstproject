@@ -127,8 +127,9 @@ async function runDailyReportsIfDue() {
   const hour = Number(p.hour);
   const minute = Number(p.minute);
 
-  // Target 00:01 Tashkent. Retry window covers cold starts, but SENT reports never duplicate.
-  if (hour !== 0 || minute < 1 || minute > 10) return;
+  // Target is 00:01 Tashkent. Keep a generous retry window for Render cold starts/deploys.
+  // SENT reports are idempotent and will never be duplicated.
+  if (hour !== 0 || minute < 1 || minute > 30) return;
 
   const { data: restaurants, error } = await db
     .from('restaurant_restaurants')
