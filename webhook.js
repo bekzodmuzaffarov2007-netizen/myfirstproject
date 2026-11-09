@@ -27,6 +27,7 @@ const db = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
 const bot = new Telegraf(BOT_TOKEN);
 const app = express();
 app.use(express.json());
+require('./restaurant-os.js')(app, db);
 
 const managerIds = new Set(MANAGER_TELEGRAM_IDS.split(',').map(x => x.trim()).filter(Boolean));
 const checkoutLocks = new Set();
